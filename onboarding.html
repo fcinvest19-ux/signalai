@@ -55,6 +55,8 @@
 <script type="text/babel">
 const { useState, useMemo, useCallback } = React;
 
+const DEFAULT_EXCLUDE_GLOBAL = 'podcast|webinaire|conférence|événement|agenda|interview|recette|horoscope|météo|cinéma|concert|sport|liquidation judiciaire';
+
 /* ══════════════════════════════════════════════
    DONNÉES DE RÉFÉRENCE
 ══════════════════════════════════════════════ */
@@ -196,7 +198,7 @@ function esc(v) {
 
 function genSQL(st) {
   const {clientId, clientName, geographyScope, regions, pkg, sources, signals, contacts, channel,
-         serviceLevel, featureFlags, llmProfile, analysisDepth} = st;
+         serviceLevel, featureFlags, llmProfile, analysisDepth, excludeGlobal} = st;
   const now = new Date().toLocaleString('fr-FR', {dateStyle:'short', timeStyle:'medium'});
   const geoStr = regions.join(', ');
   const nb = sources.length;
@@ -208,6 +210,7 @@ function genSQL(st) {
     : `'{"advanced_scoring":false,"advanced_enrichment":false,"double_pass_enrichment":false,"slack_enabled":false,"crm_push_enabled":false,"advanced_reporting":false,"linkedin_module":false}'::jsonb`;
   const llmVal = llmProfile    ? `'${llmProfile}'`  : `'light'`;
   const adVal  = analysisDepth != null ? analysisDepth : 1;
+  const exclVal = esc(excludeGlobal != null ? excludeGlobal : DEFAULT_EXCLUDE_GLOBAL);
 
   let s = '';
   s += `-- ═══════════════════════════════════════════════════════════\n`;
@@ -222,13 +225,13 @@ function genSQL(st) {
   s += `-- ─── 1. TABLE clients ───\n`;
   s += `INSERT INTO clients (\n`;
   s += `  client_id, client_name, geography_scope, geographic_scope, package,\n`;
-  s += `  service_level, feature_flags, llm_profile, analysis_depth\n`;
+  s += `  service_level, feature_flags, llm_profile, analysis_depth, exclude_global\n`;
   s += `)\nVALUES (\n`;
   const geoScopeStr = Array.isArray(geographyScope) ? geographyScope.join(', ') : geographyScope;
   s += `  '${esc(clientId)}', '${esc(clientName)}',\n`;
   s += `  '${esc(geoScopeStr)}', '${esc(geoStr)}', ${pkgVal},\n`;
   s += `  ${slVal}, ${ffVal},\n`;
-  s += `  ${llmVal}, ${adVal}\n`;
+  s += `  ${llmVal}, ${adVal}, '${exclVal}'\n`;
   s += `)\nON CONFLICT (client_id) DO UPDATE\n`;
   s += `  SET client_name      = EXCLUDED.client_name,\n`;
   s += `      geography_scope  = EXCLUDED.geography_scope,\n`;
@@ -237,7 +240,8 @@ function genSQL(st) {
   s += `      service_level    = EXCLUDED.service_level,\n`;
   s += `      feature_flags    = EXCLUDED.feature_flags,\n`;
   s += `      llm_profile      = EXCLUDED.llm_profile,\n`;
-  s += `      analysis_depth   = EXCLUDED.analysis_depth;\n\n`;
+  s += `      analysis_depth   = EXCLUDED.analysis_depth,\n`;
+  s += `      exclude_global   = EXCLUDED.exclude_global;\n\n`;
 
   s += `-- ─── 2. SOUSCRIPTIONS SOURCES (${nb}) ───\n`;
   s += `DELETE FROM client_source_subscriptions WHERE client_id = '${esc(clientId)}';\n`;
@@ -431,6 +435,32 @@ function Step1({st, set}) {
             {' · '}ajustable indépendamment en étape 2
           </p>
         )}
+      </div>
+
+      {/* ── Filtres d'exclusion globale ── */}
+      <div style={{borderTop:'1px solid #1e293b', paddingTop:'20px', marginTop:'4px'}}>
+        <h3 style={{marginBottom:'4px'}}>Filtres d'exclusion globale</h3>
+        <p className="text-slate-400 text-sm mb-3">
+          Articles rejetés dès l'ingestion, tous signaux confondus. La valeur par défaut couvre les faux
+          positifs courants (presse non-business, liquidation judiciaire). Format : regex pipe-séparée.
+        </p>
+        <textarea
+          value={st.excludeGlobal != null ? st.excludeGlobal : DEFAULT_EXCLUDE_GLOBAL}
+          onChange={e => set(s => ({...s, excludeGlobal: e.target.value}))}
+          rows={3}
+          style={{background:'#1e293b', border:'1px solid #334155', borderRadius:'6px', color:'#e2e8f0',
+            padding:'8px 12px', width:'100%', outline:'none', fontFamily:'monospace', fontSize:'12px',
+            resize:'vertical', lineHeight:'1.6'}}
+        />
+        <p className="text-xs text-slate-500 mt-1">
+          Stocké dans <code className="text-slate-400">clients.exclude_global</code> — séparateur <code className="text-slate-400">|</code>
+          {' · '}
+          <span
+            className="text-blue-400 cursor-pointer hover:underline"
+            onClick={() => set(s => ({...s, excludeGlobal: DEFAULT_EXCLUDE_GLOBAL}))}>
+            Réinitialiser aux valeurs par défaut
+          </span>
+        </p>
       </div>
     </div>
   );
@@ -900,6 +930,7 @@ const INIT = {
   signals: SIGNALS.map(s=>s.sid),
   channel:'email',
   contacts:[{id:1, name:'', email:'', role:'national', scope:'ALL', slack:'', alert:true, digest:true}],
+  excludeGlobal: DEFAULT_EXCLUDE_GLOBAL,
 };
 
 function App() {
@@ -923,7 +954,7 @@ function App() {
           <img src="logo-signalai.png"
                alt="SignalAi" className="h-8 w-8 rounded-lg object-cover" />
           <span className="text-white text-sm"><strong>SignalAi</strong>&nbsp;&nbsp;Onboarding Form</span>
-          <span className="ml-auto text-xs text-slate-600 font-mono">v1.5 · 2026-04-13</span>
+          <span className="ml-auto text-xs text-slate-600 font-mono">v1.6 · 2026-04-23</span>
         </div>
       </div>
 
